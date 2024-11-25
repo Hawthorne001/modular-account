@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {ModuleEntity} from "@erc6900/reference-implementation/interfaces/IModularAccount.sol";
+import {ModuleEntity, ValidationConfig} from "@erc6900/reference-implementation/interfaces/IModularAccount.sol";
 import {ModuleEntityLib} from "@erc6900/reference-implementation/libraries/ModuleEntityLib.sol";
+import {ValidationConfigLib} from "@erc6900/reference-implementation/libraries/ValidationConfigLib.sol";
 import {IEntryPoint} from "@eth-infinitism/account-abstraction/interfaces/IEntryPoint.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
-import {FALLBACK_VALIDATION, FALLBACK_VALIDATION_LOOKUP_KEY} from "../helpers/Constants.sol";
+import {FALLBACK_VALIDATION_ID, FALLBACK_VALIDATION_LOOKUP_KEY} from "../helpers/Constants.sol";
 import {ExecutionInstallDelegate} from "../helpers/ExecutionInstallDelegate.sol";
 import {SignatureType} from "../helpers/SignatureType.sol";
 import {RTCallBuffer, SigCallBuffer, UOCallBuffer} from "../libraries/ExecutionLib.sol";
@@ -24,6 +25,7 @@ import {ModularAccountBase} from "./ModularAccountBase.sol";
 abstract contract SemiModularAccountBase is ModularAccountBase {
     using MessageHashUtils for bytes32;
     using ModuleEntityLib for ModuleEntity;
+    using ValidationConfigLib for ValidationConfig;
 
     struct SemiModularAccountStorage {
         address fallbackSigner;
@@ -44,6 +46,7 @@ abstract contract SemiModularAccountBase is ModularAccountBase {
     event FallbackSignerUpdated(address indexed newFallbackSigner, bool isDisabled);
 
     error FallbackSignerMismatch();
+    error FallbackValidationInstallationNotAllowed();
     error FallbackSignerDisabled();
     error InvalidSignatureType();
 
@@ -63,6 +66,24 @@ abstract contract SemiModularAccountBase is ModularAccountBase {
         emit FallbackSignerUpdated(fallbackSigner, isDisabled);
     }
 
+    function installValidation(
+        ValidationConfig validationConfig,
+        bytes4[] calldata selectors,
+        bytes calldata installData,
+        bytes[] calldata hooks
+    ) external override wrapNativeFunction {
+        // Previously, it was possible to "alias" the fallback validation by installing a module at the reserved
+        // validation entity id 0. Not failing here could cause unexpected behavior, so this is checked to
+        // explicitly revert and warn the caller that this operation would not do what is requested.
+        //
+        // Note that this state can still be reached by upgrading from MA to SMA, but should be handled with
+        // initialization and de-init steps.
+        if (validationConfig.entityId() == FALLBACK_VALIDATION_ID && validationConfig.module() != address(0)) {
+            revert FallbackValidationInstallationNotAllowed();
+        }
+        _installValidation(validationConfig, selectors, installData, hooks);
+    }
+
     /// @notice Returns the fallback signer data in storage.
     /// @return The fallback signer and a boolean, true if the fallback signer validation is disabled, false if it
     /// is enabled.
@@ -72,12 +93,12 @@ abstract contract SemiModularAccountBase is ModularAccountBase {
     }
 
     function _execUserOpValidation(
-        ModuleEntity userOpValidationFunction,
+        ValidationLookupKey validationLookupKey,
         bytes32 userOpHash,
         bytes calldata signatureSegment,
         UOCallBuffer callBuffer
     ) internal override returns (uint256) {
-        if (userOpValidationFunction.eq(FALLBACK_VALIDATION)) {
+        if (validationLookupKey.eq(FALLBACK_VALIDATION_LOOKUP_KEY)) {
             address fallbackSigner = _getFallbackSigner();
 
             if (_checkSignature(fallbackSigner, userOpHash.toEthSignedMessageHash(), signatureSegment)) {
@@ -86,32 +107,32 @@ abstract contract SemiModularAccountBase is ModularAccountBase {
             return _SIG_VALIDATION_FAILED;
         }
 
-        return super._execUserOpValidation(userOpValidationFunction, userOpHash, signatureSegment, callBuffer);
+        return super._execUserOpValidation(validationLookupKey, userOpHash, signatureSegment, callBuffer);
     }
 
     function _execRuntimeValidation(
-        ModuleEntity runtimeValidationFunction,
+        ValidationLookupKey validationLookupKey,
         RTCallBuffer callBuffer,
         bytes calldata authorization
     ) internal override {
-        if (runtimeValidationFunction.eq(FALLBACK_VALIDATION)) {
+        if (validationLookupKey.eq(FALLBACK_VALIDATION_LOOKUP_KEY)) {
             address fallbackSigner = _getFallbackSigner();
 
             if (msg.sender != fallbackSigner) {
                 revert FallbackSignerMismatch();
             }
         } else {
-            super._execRuntimeValidation(runtimeValidationFunction, callBuffer, authorization);
+            super._execRuntimeValidation(validationLookupKey, callBuffer, authorization);
         }
     }
 
     function _exec1271Validation(
         SigCallBuffer buffer,
         bytes32 hash,
-        ModuleEntity sigValidation,
+        ValidationLookupKey validationLookupKey,
         bytes calldata signature
     ) internal view override returns (bytes4) {
-        if (sigValidation.eq(FALLBACK_VALIDATION)) {
+        if (validationLookupKey.eq(FALLBACK_VALIDATION_LOOKUP_KEY)) {
             address fallbackSigner = _getFallbackSigner();
 
             // If called during validateUserOp, this implies that we're doing a deferred validation installation.
@@ -125,7 +146,7 @@ abstract contract SemiModularAccountBase is ModularAccountBase {
             }
             return _1271_INVALID;
         }
-        return super._exec1271Validation(buffer, hash, sigValidation, signature);
+        return super._exec1271Validation(buffer, hash, validationLookupKey, signature);
     }
 
     function _checkSignature(address owner, bytes32 digest, bytes calldata sig) internal view returns (bool) {
@@ -233,8 +254,14 @@ abstract contract SemiModularAccountBase is ModularAccountBase {
     }
 
     // Conditionally skip allocation of call buffers.
-    function _validationIsNative(ModuleEntity validationFunction) internal pure virtual override returns (bool) {
-        return validationFunction.eq(FALLBACK_VALIDATION);
+    function _validationIsNative(ValidationLookupKey validationLookupKey)
+        internal
+        pure
+        virtual
+        override
+        returns (bool)
+    {
+        return validationLookupKey.eq(FALLBACK_VALIDATION_LOOKUP_KEY);
     }
 
     /// @notice Adds a EIP-712 replay safe hash wrapper to the digest

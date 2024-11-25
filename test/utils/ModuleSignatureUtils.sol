@@ -25,10 +25,6 @@ import {
 } from "@erc6900/reference-implementation/helpers/Constants.sol";
 import {ModuleEntity} from "@erc6900/reference-implementation/interfaces/IModularAccount.sol";
 import {ModuleEntityLib} from "@erc6900/reference-implementation/libraries/ModuleEntityLib.sol";
-import {
-    ValidationConfig,
-    ValidationConfigLib
-} from "@erc6900/reference-implementation/libraries/ValidationConfigLib.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {ModularAccount} from "../../src/account/ModularAccount.sol";
@@ -59,9 +55,8 @@ contract ModuleSignatureUtils {
     uint8 public constant EOA_TYPE_SIGNATURE = 0;
 
     string internal constant _DEFERRED_ACTION_CONTENTS_TYPE =
-        "DeferredAction(uint256 nonce,uint48 deadline,uint168 validationLocator,bytes call)";
-    bytes32 private constant _DEFERRED_ACTION_TYPEHASH =
-        keccak256(abi.encodePacked(_DEFERRED_ACTION_CONTENTS_TYPE));
+        "DeferredAction(uint256 nonce,uint48 deadline,bytes call)";
+    bytes32 private immutable _DEFERRED_ACTION_TYPEHASH;
 
     bytes32 internal constant _REPLAY_SAFE_HASH_TYPEHASH = keccak256("ReplaySafeHash(bytes32 hash)");
 
@@ -69,6 +64,10 @@ contract ModuleSignatureUtils {
         keccak256("EIP712Domain(uint256 chainId,address verifyingContract)");
     bytes32 internal constant _MODULE_DOMAIN_SEPARATOR =
         keccak256("EIP712Domain(uint256 chainId,address verifyingContract,bytes32 salt)");
+
+    constructor() {
+        _DEFERRED_ACTION_TYPEHASH = keccak256(abi.encodePacked(_DEFERRED_ACTION_CONTENTS_TYPE));
+    }
 
     function _encodeSignature(PreValidationHookData[] memory preValidationHookData, bytes memory validationData)
         internal
@@ -287,38 +286,29 @@ contract ModuleSignatureUtils {
         );
     }
 
-    function _packDeferredInstallData(
-        uint256 nonce,
-        uint48 deadline,
-        ValidationConfig validationFunction,
-        bytes memory call
-    ) internal pure returns (bytes memory) {
-        bytes memory deferredInstallData = abi.encodePacked(nonce, deadline, validationFunction, call);
+    function _packDeferredInstallData(uint48 deadline, ValidationLocator validationFunction, bytes memory call)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        bytes memory deferredInstallData = abi.encodePacked(validationFunction, deadline, call);
 
         return deferredInstallData;
     }
 
     function _getDeferredInstallStruct(
         ModularAccount account,
-        uint256 nonce,
+        uint256 userOpNonce,
         uint48 deadline,
-        ValidationConfig validationFunction,
         bytes memory selfCall
     ) internal view returns (bytes32) {
-        // Assumes this is not using the direct call path, and that isGlobal is true.
-        ValidationLocator locator = ValidationLocatorLib.pack({
-            _entityId: ValidationConfigLib.entityId(validationFunction),
-            _isGlobal: true,
-            _hasDeferredAction: true
-        });
-
         bytes32 domainSeparator = _computeDomainSeparator(address(account));
 
         bytes32 selfCallHash = keccak256(selfCall);
 
         return MessageHashUtils.toTypedDataHash({
             domainSeparator: domainSeparator,
-            structHash: keccak256(abi.encode(_DEFERRED_ACTION_TYPEHASH, nonce, deadline, locator, selfCallHash))
+            structHash: keccak256(abi.encode(_DEFERRED_ACTION_TYPEHASH, userOpNonce, deadline, selfCallHash))
         });
     }
 
