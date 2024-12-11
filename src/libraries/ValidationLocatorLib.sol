@@ -47,6 +47,9 @@ type ValidationLocator is uint168;
 // direct call validation flag.
 type ValidationLookupKey is uint168;
 
+using ValidationLocatorLib for ValidationLocator global;
+using ValidationLocatorLib for ValidationLookupKey global;
+
 library ValidationLocatorLib {
     using ValidationConfigLib for ValidationConfig;
 
@@ -183,7 +186,7 @@ library ValidationLocatorLib {
     // Only safe to call if the lookup has been asserted to be a non-direct call validation.
     function entityId(ValidationLookupKey _lookupKey) internal pure returns (uint32 result) {
         assembly ("memory-safe") {
-            result := and(shr(8, _lookupKey), 0xFFFFFFFFFFFFFFFF)
+            result := and(shr(8, _lookupKey), 0xFFFFFFFF)
         }
     }
 
@@ -306,18 +309,14 @@ library ValidationLocatorLib {
         result <<= 64;
     }
 
-    function packSignature(
-        uint32 validationEntityId,
-        bool _isGlobal,
-        bool _hasDeferredAction,
-        bytes memory signature
-    ) internal pure returns (bytes memory result) {
+    function packSignature(uint32 validationEntityId, bool _isGlobal, bytes memory signature)
+        internal
+        pure
+        returns (bytes memory result)
+    {
         uint8 options = 0;
         if (_isGlobal) {
             options |= _VALIDATION_TYPE_GLOBAL;
-        }
-        if (_hasDeferredAction) {
-            options |= _HAS_DEFERRED_ACTION;
         }
 
         return bytes.concat(abi.encodePacked(options, uint32(validationEntityId)), signature);
@@ -372,6 +371,3 @@ library ValidationLocatorLib {
         return ValidationLookupKey.unwrap(a) == ValidationLookupKey.unwrap(b);
     }
 }
-
-using ValidationLocatorLib for ValidationLocator global;
-using ValidationLocatorLib for ValidationLookupKey global;
