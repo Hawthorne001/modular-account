@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 
 import {IEntryPoint} from "@eth-infinitism/account-abstraction/interfaces/IEntryPoint.sol";
@@ -11,6 +10,7 @@ import {SemiModularAccountBytecode} from "../src/account/SemiModularAccountBytec
 import {ExecutionInstallDelegate} from "../src/helpers/ExecutionInstallDelegate.sol";
 
 import {Artifacts} from "./Artifacts.sol";
+import {ScriptBase} from "./ScriptBase.sol";
 
 // Logs all initcode hashes from deployment artifacts.
 // Generates in order of dependencies:
@@ -31,15 +31,8 @@ import {Artifacts} from "./Artifacts.sol";
 // WebAuthnValidationModule, and owner address:
 // - AccountFactory
 
-contract GetInitcodeHashScript is Script, Artifacts {
-    function run() public view {
-        // Assert that the correct profile is being used.
-        string memory profile = vm.envOr(string("FOUNDRY_PROFILE"), string(""));
-
-        if (keccak256(bytes(profile)) != keccak256("optimized-build")) {
-            revert("This script should be run with the `optimized-build` profile.");
-        }
-
+contract GetInitcodeHashScript is ScriptBase, Artifacts {
+    function run() public view onlyProfile("optimized-build") {
         console.log("******** Calculating Initcode Hashes *********");
 
         console.log("Artifact initcode hashes with no dependencies:");
@@ -54,18 +47,10 @@ contract GetInitcodeHashScript is Script, Artifacts {
         console.log("- WebAuthnValidationModule: %x", uint256(keccak256(_getWebAuthnValidationModuleInitcode())));
 
         console.log("Artifact initcode hashes with dependencies on EntryPoint and ExecutionInstallDelegate:");
-        IEntryPoint entryPoint = IEntryPoint(payable(vm.envOr("ENTRYPOINT", address(0))));
-        if (address(entryPoint) == address(0)) {
-            console.log(
-                "Env Variable 'ENTRYPOINT' not found or invalid, defaulting to v0.7 EntryPoint at "
-                "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
-            );
-            entryPoint = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
-        } else {
-            console.log("Using user-defined EntryPoint at: %x", address(entryPoint));
-        }
+        IEntryPoint entryPoint = _getEntryPoint();
+
         ExecutionInstallDelegate executionInstallDelegate =
-            ExecutionInstallDelegate(vm.envOr("EXECUTION_INSTALL_DELEGATE", address(0)));
+            ExecutionInstallDelegate(_getExecutionInstallDelegate());
 
         if (address(executionInstallDelegate) == address(0)) {
             console.log(
@@ -100,12 +85,12 @@ contract GetInitcodeHashScript is Script, Artifacts {
             "WebAuthnValidationModule, and owner address:"
         );
 
-        ModularAccount modularAccountImpl = ModularAccount(payable(vm.envOr("MODULAR_ACCOUNT_IMPL", address(0))));
+        ModularAccount modularAccountImpl = ModularAccount(payable(_getModularAccountImpl()));
         SemiModularAccountBytecode semiModularImpl =
-            SemiModularAccountBytecode(payable(vm.envOr("SEMI_MODULAR_ACCOUNT_BYTECODE_IMPL", address(0))));
-        address singleSignerValidationModule = vm.envOr("SINGLE_SIGNER_VALIDATION_MODULE", address(0));
-        address webAuthnValidationModule = vm.envOr("WEBAUTHN_VALIDATION_MODULE", address(0));
-        address factoryOwner = vm.envOr("FACTORY_OWNER", address(0));
+            SemiModularAccountBytecode(payable(_getSemiModularAccountBytecodeImpl()));
+        address singleSignerValidationModule = _getSingleSignerValidationModule();
+        address webAuthnValidationModule = _getWebAuthnValidationModule();
+        address factoryOwner = _getFactoryOwner();
 
         if (address(modularAccountImpl) == address(0)) {
             console.log(
