@@ -16,8 +16,7 @@ contract DeployAccountsScript is ScriptBase, Artifacts {
 
     IEntryPoint public entryPoint;
 
-    address public expectedExecutionInstallDelegate;
-    uint256 public executionInstallDelegateSalt;
+    address public executionInstallDelegate;
 
     address public expectedModularAccountImpl;
     uint256 public modularAccountImplSalt;
@@ -25,15 +24,14 @@ contract DeployAccountsScript is ScriptBase, Artifacts {
     address public expectedSemiModularAccountBytecodeImpl;
     uint256 public semiModularAccountBytecodeImplSalt;
 
-    address public expectedSemiModularAccountStorageOnlyImpl;
-    uint256 public semiModularAccountStorageOnlyImplSalt;
+    address public expectedSemiModularAccount7702Impl;
+    uint256 public semiModularAccount7702ImplSalt;
 
     function setUp() public {
         // Load the required addresses for the deployment from env vars.
         entryPoint = _getEntryPoint();
 
-        expectedExecutionInstallDelegate = _getExecutionInstallDelegate();
-        executionInstallDelegateSalt = _getSaltOrZero("EXECUTION_INSTALL_DELEGATE");
+        executionInstallDelegate = _getExecutionInstallDelegate();
 
         expectedModularAccountImpl = _getModularAccountImpl();
         modularAccountImplSalt = _getSaltOrZero("MODULAR_ACCOUNT_IMPL");
@@ -41,22 +39,16 @@ contract DeployAccountsScript is ScriptBase, Artifacts {
         expectedSemiModularAccountBytecodeImpl = _getSemiModularAccountBytecodeImpl();
         semiModularAccountBytecodeImplSalt = _getSaltOrZero("SEMI_MODULAR_ACCOUNT_BYTECODE_IMPL");
 
-        expectedSemiModularAccountStorageOnlyImpl = address(_getSemiModularAccountStorageOnlyImpl());
-        semiModularAccountStorageOnlyImplSalt = _getSaltOrZero("SEMI_MODULAR_ACCOUNT_STORAGE_ONLY_IMPL");
+        expectedSemiModularAccount7702Impl = _getSemiModularAccount7702Impl();
+        semiModularAccount7702ImplSalt = _getSaltOrZero("SEMI_MODULAR_ACCOUNT_7702_IMPL");
     }
 
     function run() public onlyProfile("optimized-build") {
-        console.log("******** Deploying Account Implementations and Execution Install Delegate *********");
+        console.log("******** Deploying Account Implementations *********");
+
+        _ensureNonzeroArgs();
 
         vm.startBroadcast();
-
-        _safeDeploy(
-            "Execution Install Delegate",
-            expectedExecutionInstallDelegate,
-            executionInstallDelegateSalt,
-            _getExecutionInstallDelegateInitcode(),
-            _deployExecutionInstallDelegate
-        );
 
         // At this point, the delegate and entrypoint are valid, so we can safely proceed with
         // using them as parameters and accessing them in wrapped functions.
@@ -65,7 +57,7 @@ contract DeployAccountsScript is ScriptBase, Artifacts {
             "Modular Account Impl",
             expectedModularAccountImpl,
             modularAccountImplSalt,
-            _getModularAccountInitcode(entryPoint, ExecutionInstallDelegate(expectedExecutionInstallDelegate)),
+            _getModularAccountInitcode(entryPoint, ExecutionInstallDelegate(executionInstallDelegate)),
             _wrappedDeployModularAccount
         );
 
@@ -73,43 +65,53 @@ contract DeployAccountsScript is ScriptBase, Artifacts {
             "Semi Modular Account Bytecode Impl",
             expectedSemiModularAccountBytecodeImpl,
             semiModularAccountBytecodeImplSalt,
-            _getSemiModularAccountBytecodeInitcode(
-                entryPoint, ExecutionInstallDelegate(expectedExecutionInstallDelegate)
-            ),
+            _getSemiModularAccountBytecodeInitcode(entryPoint, ExecutionInstallDelegate(executionInstallDelegate)),
             _wrappedDeploySemiModularAccountBytecode
         );
 
         _safeDeploy(
-            "Semi Modular Account Storage Only Impl",
-            expectedSemiModularAccountStorageOnlyImpl,
-            semiModularAccountStorageOnlyImplSalt,
-            _getSemiModularAccountStorageOnlyInitcode(
-                entryPoint, ExecutionInstallDelegate(expectedExecutionInstallDelegate)
-            ),
-            _wrappedDeploySemiModularAccountStorageOnly
+            "Semi Modular Account 7702 Impl",
+            expectedSemiModularAccount7702Impl,
+            semiModularAccount7702ImplSalt,
+            _getSemiModularAccount7702Initcode(entryPoint, ExecutionInstallDelegate(executionInstallDelegate)),
+            _wrappedDeploySemiModularAccount7702
         );
 
         vm.stopBroadcast();
 
-        console.log("******** Account Implementations and Execution Install Delegate Deployed *********");
+        console.log("******** Account Implementations Deployed *********");
     }
 
     // These functions wrap the internal deployment functions to provide access to the needed state variables
     // without affecting the expected signature from _safeDeploy.
 
     function _wrappedDeployModularAccount(bytes32 salt) internal returns (address) {
-        return _deployModularAccount(salt, entryPoint, ExecutionInstallDelegate(expectedExecutionInstallDelegate));
+        return _deployModularAccount(salt, entryPoint, ExecutionInstallDelegate(executionInstallDelegate));
     }
 
     function _wrappedDeploySemiModularAccountBytecode(bytes32 salt) internal returns (address) {
-        return _deploySemiModularAccountBytecode(
-            salt, entryPoint, ExecutionInstallDelegate(expectedExecutionInstallDelegate)
-        );
+        return
+            _deploySemiModularAccountBytecode(salt, entryPoint, ExecutionInstallDelegate(executionInstallDelegate));
     }
 
-    function _wrappedDeploySemiModularAccountStorageOnly(bytes32 salt) internal returns (address) {
-        return _deploySemiModularAccountStorageOnly(
-            salt, entryPoint, ExecutionInstallDelegate(expectedExecutionInstallDelegate)
-        );
+    function _wrappedDeploySemiModularAccount7702(bytes32 salt) internal returns (address) {
+        return _deploySemiModularAccount7702(salt, entryPoint, ExecutionInstallDelegate(executionInstallDelegate));
+    }
+
+    function _ensureNonzeroArgs() internal view {
+        bool shouldRevert;
+
+        if (address(executionInstallDelegate) == address(0)) {
+            console.log(
+                "Env Variable 'EXECUTION_INSTALL_DELEGATE' not found or invalid during accounts deployment."
+            );
+            shouldRevert = true;
+        } else {
+            console.log("Using user-defined ExecutionInstallDelegate at: %x", executionInstallDelegate);
+        }
+
+        if (shouldRevert) {
+            revert("Missing or invalid env variables during factory deployment");
+        }
     }
 }
