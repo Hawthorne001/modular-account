@@ -15,302 +15,61 @@
 // You should have received a copy of the GNU General Public License along with this program. If not, see
 // <https://www.gnu.org/licenses/>.
 
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.26;
 
-import {Test} from "forge-std/Test.sol";
-import {EntryPoint} from "@eth-infinitism/account-abstraction/core/EntryPoint.sol";
-import {FunctionReference} from "modular-account-libs/interfaces/IPluginManager.sol";
-import {
-    IPlugin,
-    ManifestExecutionHook,
-    ManifestAssociatedFunctionType,
-    ManifestFunction,
-    PluginManifest
-} from "modular-account-libs/interfaces/IPlugin.sol";
-import {ERC721PresetMinterPauserAutoId} from
-    "@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol";
-import {IERC1155Receiver} from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
+import {IERC1155Receiver} from "@openzeppelin/contracts/interfaces/IERC1155Receiver.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import {IERC777Recipient} from "@openzeppelin/contracts/token/ERC777/IERC777Recipient.sol";
 
-import {UpgradeableModularAccount} from "../../src/account/UpgradeableModularAccount.sol";
-import {MultiOwnerModularAccountFactory} from "../../src/factory/MultiOwnerModularAccountFactory.sol";
-import {IEntryPoint} from "../../src/interfaces/erc4337/IEntryPoint.sol";
-import {MultiOwnerPlugin} from "../../src/plugins/owner/MultiOwnerPlugin.sol";
-import {MockPlugin} from "../mocks/MockPlugin.sol";
-import {MockERC1155} from "../mocks/tokens/MockERC1155.sol";
-import {MockERC777} from "../mocks/tokens/MockERC777.sol";
+import {MockERC1155} from "../mocks/MockERC1155.sol";
+import {MockERC721} from "../mocks/MockERC721.sol";
+import {AccountTestBase} from "../utils/AccountTestBase.sol";
 
-contract TokenReceiverTest is Test, IERC1155Receiver {
-    UpgradeableModularAccount public acct;
+contract TokenReceiverTest is AccountTestBase {
+    MockERC721 public erc721;
+    MockERC1155 public erc1155;
+    uint256 internal constant _NFT_TOKEN_ID = 0;
+    uint256 internal constant _NFT_TOKEN_COUNT = 10;
 
-    ERC721PresetMinterPauserAutoId public t0;
-    MockERC777 public t1;
-    MockERC1155 public t2;
-    MockPlugin public mockPlugin;
-    MultiOwnerModularAccountFactory public factory;
-    MultiOwnerPlugin public multiOwnerPlugin;
-    IEntryPoint public entryPoint;
+    function setUp() public override {
+        _revertSnapshot = vm.snapshotState();
+        // Compute counterfactual address
+        // account1 = factory.createAccount(owner1, 0, TEST_DEFAULT_VALIDATION_ENTITY_ID);
+        // vm.deal(address(account1), 100 ether);
 
-    address public owner;
-    address[] public owners;
-
-    // init dynamic length arrays for use in args
-    address[] public defaultOperators;
-    uint256[] public tokenIds;
-    uint256[] public tokenAmts;
-    uint256[] public zeroTokenAmts;
-
-    uint256 internal constant _TOKEN_AMOUNT = 1 ether;
-    uint256 internal constant _TOKEN_ID = 0;
-    uint256 internal constant _BATCH_TOKEN_IDS = 5;
-
-    function setUp() public {
-        entryPoint = IEntryPoint(address(new EntryPoint()));
-        multiOwnerPlugin = new MultiOwnerPlugin();
-        factory = new MultiOwnerModularAccountFactory(
-            address(this),
-            address(multiOwnerPlugin),
-            address(new UpgradeableModularAccount(entryPoint)),
-            keccak256(abi.encode(multiOwnerPlugin.pluginManifest())),
-            entryPoint
-        );
-        (owner,) = makeAddrAndKey("owner");
-        owners = new address[](1);
-        owners[0] = owner;
-        acct = UpgradeableModularAccount(payable(factory.createAccount(0, owners)));
-
-        t0 = new ERC721PresetMinterPauserAutoId("t0", "t0", "");
-        t0.mint(address(this));
-
-        t1 = new MockERC777();
-        t1.mint(address(this), _TOKEN_AMOUNT);
-
-        t2 = new MockERC1155();
-        t2.mint(address(this), _TOKEN_ID, _TOKEN_AMOUNT);
-        for (uint256 i = 1; i < _BATCH_TOKEN_IDS; i++) {
-            t2.mint(address(this), i, _TOKEN_AMOUNT);
-            tokenIds.push(i);
-            tokenAmts.push(_TOKEN_AMOUNT);
-            zeroTokenAmts.push(0);
-        }
+        erc721 = new MockERC721("NFT", "NFT");
+        erc721.mint(owner1, _NFT_TOKEN_ID);
+        erc1155 = new MockERC1155();
+        erc1155.mint(owner1, _NFT_TOKEN_ID, _NFT_TOKEN_COUNT);
     }
 
-    function test_passERC721Transfer() public {
-        assertEq(t0.ownerOf(_TOKEN_ID), address(this));
-        t0.safeTransferFrom(address(this), address(acct), _TOKEN_ID);
-        assertEq(t0.ownerOf(_TOKEN_ID), address(acct));
+    function test_supportedInterfaces() public withSMATest {
+        assertTrue(account1.supportsInterface(type(IERC721Receiver).interfaceId));
+        assertTrue(account1.supportsInterface(type(IERC1155Receiver).interfaceId));
     }
 
-    function test_passERC777Transfer() public {
-        assertEq(t1.balanceOf(address(this)), _TOKEN_AMOUNT);
-        assertEq(t1.balanceOf(address(acct)), 0);
-        t1.transfer(address(acct), _TOKEN_AMOUNT);
-        assertEq(t1.balanceOf(address(this)), 0);
-        assertEq(t1.balanceOf(address(acct)), _TOKEN_AMOUNT);
+    function test_receiveERC721() public withSMATest {
+        assertEq(owner1, erc721.ownerOf(_NFT_TOKEN_ID));
+        vm.prank(owner1);
+        erc721.transferFrom(owner1, address(account1), _NFT_TOKEN_ID);
+        assertEq(address(account1), erc721.ownerOf(_NFT_TOKEN_ID));
     }
 
-    function test_passERC1155Transfer() public {
-        assertEq(t2.balanceOf(address(this), _TOKEN_ID), _TOKEN_AMOUNT);
-        assertEq(t2.balanceOf(address(acct), _TOKEN_ID), 0);
-        t2.safeTransferFrom(address(this), address(acct), _TOKEN_ID, _TOKEN_AMOUNT, "");
-        assertEq(t2.balanceOf(address(this), _TOKEN_ID), 0);
-        assertEq(t2.balanceOf(address(acct), _TOKEN_ID), _TOKEN_AMOUNT);
-
-        for (uint256 i = 1; i < _BATCH_TOKEN_IDS; i++) {
-            assertEq(t2.balanceOf(address(this), i), _TOKEN_AMOUNT);
-            assertEq(t2.balanceOf(address(acct), i), 0);
-        }
-        t2.safeBatchTransferFrom(address(this), address(acct), tokenIds, tokenAmts, "");
-        for (uint256 i = 1; i < _BATCH_TOKEN_IDS; i++) {
-            assertEq(t2.balanceOf(address(this), i), 0);
-            assertEq(t2.balanceOf(address(acct), i), _TOKEN_AMOUNT);
-        }
+    function test_receiveERC1155() public withSMATest {
+        assertEq(_NFT_TOKEN_COUNT, erc1155.balanceOf(owner1, _NFT_TOKEN_ID));
+        vm.prank(owner1);
+        erc1155.safeTransferFrom(owner1, address(account1), _NFT_TOKEN_ID, _NFT_TOKEN_COUNT, "");
+        assertEq(_NFT_TOKEN_COUNT, erc1155.balanceOf(address(account1), _NFT_TOKEN_ID));
     }
 
-    function test_passIntrospection() public {
-        bool isSupported;
+    function test_receiveERC1155Batch() public withSMATest {
+        uint256[] memory ids = new uint256[](1);
+        uint256[] memory values = new uint256[](1);
+        ids[0] = _NFT_TOKEN_ID;
+        values[0] = _NFT_TOKEN_COUNT;
 
-        isSupported = acct.supportsInterface(type(IERC721Receiver).interfaceId);
-        assertEq(isSupported, true);
-        isSupported = acct.supportsInterface(type(IERC777Recipient).interfaceId);
-        assertEq(isSupported, true);
-        isSupported = acct.supportsInterface(type(IERC1155Receiver).interfaceId);
-        assertEq(isSupported, true);
-    }
-
-    function test_hookOnERC721Transfer() public {
-        uint8 preHookId = 1;
-        uint8 postHookId = 2;
-        _installHookOnSelector(IERC721Receiver.onERC721Received.selector, preHookId, postHookId);
-
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(
-                IPlugin.preExecutionHook.selector,
-                preHookId,
-                address(t0), // caller
-                0, // msg.value in call to account
-                abi.encodeWithSelector(
-                    IERC721Receiver.onERC721Received.selector, address(this), address(this), _TOKEN_ID, ""
-                )
-            ),
-            1
-        );
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(IPlugin.postExecutionHook.selector, postHookId, abi.encode(preHookId)),
-            1
-        );
-
-        t0.safeTransferFrom(address(this), address(acct), _TOKEN_ID);
-    }
-
-    function test_hookOnERC777Transfer() public {
-        uint8 preHookId = 1;
-        uint8 postHookId = 2;
-        _installHookOnSelector(IERC777Recipient.tokensReceived.selector, preHookId, postHookId);
-
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(
-                IPlugin.preExecutionHook.selector,
-                preHookId,
-                address(t1), // caller
-                0, // msg.value in call to account
-                abi.encodeWithSelector(
-                    IERC777Recipient.tokensReceived.selector,
-                    address(this),
-                    address(this),
-                    address(acct),
-                    _TOKEN_AMOUNT,
-                    "",
-                    ""
-                )
-            ),
-            1
-        );
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(IPlugin.postExecutionHook.selector, postHookId, abi.encode(preHookId)),
-            1
-        );
-
-        t1.transfer(address(acct), _TOKEN_AMOUNT);
-    }
-
-    function test_hookOnERC1155Transfer() public {
-        uint8 preHookId = 1;
-        uint8 postHookId = 2;
-        _installHookOnSelector(IERC1155Receiver.onERC1155Received.selector, preHookId, postHookId);
-
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(
-                IPlugin.preExecutionHook.selector,
-                preHookId,
-                address(t2), // caller
-                0, // msg.value in call to account
-                abi.encodeWithSelector(
-                    IERC1155Receiver.onERC1155Received.selector,
-                    address(this),
-                    address(this),
-                    _TOKEN_ID,
-                    _TOKEN_AMOUNT,
-                    ""
-                )
-            ),
-            1
-        );
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(IPlugin.postExecutionHook.selector, postHookId, abi.encode(preHookId)),
-            1
-        );
-
-        t2.safeTransferFrom(address(this), address(acct), _TOKEN_ID, _TOKEN_AMOUNT, "");
-    }
-
-    function test_hookOnERC1155BatchTransfer() public {
-        uint8 preHookId = 1;
-        uint8 postHookId = 2;
-        _installHookOnSelector(IERC1155Receiver.onERC1155BatchReceived.selector, preHookId, postHookId);
-
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(
-                IPlugin.preExecutionHook.selector,
-                preHookId,
-                address(t2), // caller
-                0, // msg.value in call to account
-                abi.encodeWithSelector(
-                    IERC1155Receiver.onERC1155BatchReceived.selector,
-                    address(this),
-                    address(this),
-                    tokenIds,
-                    tokenAmts,
-                    ""
-                )
-            ),
-            1
-        );
-        vm.expectCall(
-            address(mockPlugin),
-            abi.encodeWithSelector(IPlugin.postExecutionHook.selector, postHookId, abi.encode(preHookId)),
-            1
-        );
-
-        t2.safeBatchTransferFrom(address(this), address(acct), tokenIds, tokenAmts, "");
-    }
-
-    function _installHookOnSelector(bytes4 selector, uint8 preHookId, uint8 postHookId) internal {
-        PluginManifest memory m;
-        m.executionHooks = new ManifestExecutionHook[](1);
-        m.executionHooks[0].executionSelector = selector;
-        m.executionHooks[0].preExecHook = ManifestFunction({
-            functionType: ManifestAssociatedFunctionType.SELF,
-            functionId: preHookId,
-            dependencyIndex: 0
-        });
-        m.executionHooks[0].postExecHook = ManifestFunction({
-            functionType: ManifestAssociatedFunctionType.SELF,
-            functionId: postHookId,
-            dependencyIndex: 0
-        });
-
-        mockPlugin = new MockPlugin(m);
-
-        vm.prank(owner);
-        acct.installPlugin({
-            plugin: address(mockPlugin),
-            manifestHash: keccak256(abi.encode(m)),
-            pluginInstallData: bytes(""),
-            dependencies: new FunctionReference[](0)
-        });
-    }
-
-    /**
-     * NON-TEST FUNCTIONS - USED SO MINT DOESNT FAIL
-     */
-    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
-        external
-        pure
-        override
-        returns (bytes4)
-    {
-        return IERC1155Receiver.onERC1155Received.selector;
-    }
-
-    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
-        external
-        pure
-        override
-        returns (bytes4)
-    {
-        return IERC1155Receiver.onERC1155BatchReceived.selector;
-    }
-
-    function supportsInterface(bytes4) external pure override returns (bool) {
-        return false;
+        assertEq(_NFT_TOKEN_COUNT, erc1155.balanceOf(owner1, _NFT_TOKEN_ID));
+        vm.prank(owner1);
+        erc1155.safeBatchTransferFrom(owner1, address(account1), ids, values, "");
+        assertEq(_NFT_TOKEN_COUNT, erc1155.balanceOf(address(account1), _NFT_TOKEN_ID));
     }
 }

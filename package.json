@@ -1,16 +1,31 @@
 {
   "name": "modular-account",
   "version": "v1.0.1",
+  "dependencies": {
+    "account-abstraction": "github:eth-infinitism/account-abstraction#v0.7.0",
+    "@erc6900/reference-implementation": "github:erc6900/reference-implementation#v0.8.0",
+    "solady": "github:Vectorized/solady#v0.0.237"
+  },
   "devDependencies": {
-    "pnpm": "^8.7.5",
+    "pnpm": "^9.15.0",
     "solhint": "^3.6.2"
   },
   "scripts": {
-    "lint": "pnpm lint:src && pnpm lint:test",
-    "lint:src": "solhint -c .solhint-src.json ./src/**/*.sol",
-    "lint:test": "solhint -c .solhint-test.json ./test/**/*.sol"
-  },
-  "dependencies": {
-    "modular-account-libs": "github:erc6900/modular-account-libs#v0.7.0"
+    "clean": "forge clean && FOUNDRY_PROFILE=optimized-build forge clean && FOUNDRY_PROFILE=optimized-build-standalone forge clean",
+    "coverage": "forge coverage --no-match-coverage '(test)' --nmt '(testFuzz|invariant)'",
+    "fmt": "forge fmt && FOUNDRY_PROFILE=gas forge fmt",
+    "fmt:check": "forge fmt --check && FOUNDRY_PROFILE=gas forge fmt --check",
+    "gas": "FOUNDRY_PROFILE=gas forge test -vv",
+    "gas:check": "FOUNDRY_PROFILE=gas FORGE_SNAPSHOT_CHECK=true forge test -vv",
+    "initcodehashes": "FOUNDRY_PROFILE=optimized-build forge script GetInitcodeHashScript",
+    "lcov": "forge coverage --no-match-coverage '(test)' --nmt '(testFuzz|invariant)' --report lcov",
+    "lint": "pnpm lint:src && pnpm lint:test && pnpm lint:gas && pnpm lint:script",
+    "lint:src": "solhint --max-warnings 0 -c ./config/solhint-src.json './src/**/*.sol'",
+    "lint:test": "solhint --max-warnings 0 -c ./config/solhint-test.json './test/**/*.sol'",
+    "lint:gas": "solhint --max-warnings 0 -c ./config/solhint-gas.json './gas/**/*.sol'",
+    "lint:script": "solhint --max-warnings 0 -c ./config/solhint-script.json './script/**/*.sol'",
+    "prep": "pnpm fmt && forge b --deny-warnings && pnpm lint && pnpm test && pnpm gas",
+    "sizes": "FOUNDRY_PROFILE=optimized-build forge b --sizes | grep '^|' | grep -v -e '| 17               |' -e 'Lib'",
+    "test": "forge test"
   }
 }
