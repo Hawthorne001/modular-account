@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License along with this program. If not, see
 // <https://www.gnu.org/licenses/>.
 
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.26;
 
 /// @title A public counter for anyone to use.
 contract Counter {
@@ -31,5 +31,11 @@ contract Counter {
     /// @dev The number is not in an unchecked block, so overflows will revert.
     function increment() public {
         number++;
+    }
+
+    /// @notice Decrement the counter's value by one.
+    /// @dev The number is not in an unchecked block, so overflows will revert.
+    function decrement() public {
+        number--;
     }
 }

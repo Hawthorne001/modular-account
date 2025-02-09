@@ -1,14 +1,20 @@
 [profile.default]
-solc = '0.8.22'
-evm_version='paris'
-via_ir = true
+solc = '0.8.26'
+via_ir = false
+evm_version = 'paris'
 src = 'src'
-out = 'out'
 test = 'test'
-libs = ['lib']
+libs = ['lib', 'node_modules']
+out = 'out'
 optimizer = true
-optimizer_runs = 900
-ignored_error_codes = []
+optimizer_runs = 200
+auto_detect_solc = false
+bytecode_hash = "none"
+auto_detect_remappings = false
+fs_permissions = [
+  { access = "read", path = "./out-optimized" },
+  { access = "read", path = "./test/bin" },
+]
 
 [fuzz]
 runs = 500
@@ -19,34 +25,67 @@ fail_on_revert = true
 depth = 10
 
 [profile.optimized-build]
-script = 'src'
+deny_warnings = true
+via_ir = true
 test = 'src'
+optimizer_runs = 50000
 out = 'out-optimized'
+cache_path = 'cache-optimized'
 
-[profile.lite]
-via_ir = false
-optimizer = true
-optimizer_runs = 10_000
-ignored_error_codes = []
+[profile.optimized-build-standalone]
+deny_warnings = true
+via_ir = true
+test = 'src'
+optimizer_runs = 10000000
+out = 'out-optimized-standalone'
+cache_path = 'cache-optimized-standalone'
+
+[profile.optimized-build-sma-storage]
+deny_warnings = true
+via_ir = true
+test = 'src'
+optimizer_runs = 15000
+out = 'out-optimized-sma-storage'
+cache_path = 'cache-optimized-sma-storage'
+
+[profile.optimized-test]
+deny_warnings = true
+src = 'test'
+
+[profile.optimized-test-deep]
+deny_warnings = true
+src = 'test'
+
+[profile.optimized-test-deep.fuzz]
+runs = 10000
+
+[profile.optimized-test-deep.invariant]
+runs = 5000
+depth = 32
 
 [profile.deep.fuzz]
-runs = 10000
+runs = 100000
 
 [profile.deep.invariant]
 runs = 5000
 depth = 32
 
+[profile.gas]
+via_ir = true
+deny_warnings = true
+test = 'gas'
+optimizer_runs = 50000
+out = 'out-optimized'
+cache_path = 'cache-optimized'
+snapshots = 'gas-snapshots'
+ffi = true
+isolate = true
+
 [fmt]
 line_length = 115
 wrap_comments = true
-
-[rpc_endpoints]
-mainnet = "${MAINNET_RPC_URL}"
-sepolia = "${SEPOLIA_RPC_URL}"
-goerli = "${GOERLI_RPC_URL}"
-
-[etherscan]
-mainnet = { key = "${ETHERSCAN_API_KEY}" }
-goerli = { key = "${ETHERSCAN_API_KEY}" }
+sort_imports = true
+number_underscore = "thousands"
+int_types = "long"
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License along with this program. If not, see
 // <https://www.gnu.org/licenses/>.
 
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.26;
 
 import {AccountStorageInitializable} from "../../src/account/AccountStorageInitializable.sol";
 
@@ -26,4 +26,9 @@ contract MockDiamondStorageContract is AccountStorageInitializable {
 
     // solhint-disable-next-line no-empty-blocks
     function initialize() external initializer {}
+
+    // Can't call disable initializers during initialization.
+    function badDisableInitializers() external initializer {
+        _disableInitializers();
+    }
 }
