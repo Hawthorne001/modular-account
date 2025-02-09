@@ -142,7 +142,7 @@ Our audit reports can be found in [audits](/audits). The filenames for the repor
 
 ### Bug bounty program
 
-Details of our bug bounty program can be found at https://hackerone.com/alchemyplatform.
+Our Modular Account bug bounty is hosted on the [Cantina](https://cantina.xyz/bounties/246de4d3-e138-4340-bdfc-fc4c95951491) platform.
 
 ### Other security considerations
 
